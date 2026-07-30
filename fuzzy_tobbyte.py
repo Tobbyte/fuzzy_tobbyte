@@ -16,7 +16,7 @@ TODO:
 __all__ = ["get_similar"]  # public method
 
 FUZZY_DIST = 2
-FUZZY_MAX_EPANSION = 2
+FUZZY_MAX_EXTENSION = 2
 
 def _print_fuzzy_table(table: list, str1: str, str2: str) -> None:
     """Pretty print the table."""
@@ -127,7 +127,7 @@ def get_similar(
     db: list[str],
     search_term: str,
     fuzzy_threshold: int = FUZZY_DIST,
-    max_threshold_expansion: int = FUZZY_MAX_EPANSION,
+    max_threshold_extension: int = FUZZY_MAX_EXTENSION,
     *,
     always_fuzzy: bool = False,
     print_table: bool = False,
@@ -175,9 +175,6 @@ def get_similar(
                 prev_find_dist = unique_direct_finds.get(item)
                 if not prev_find_dist or prev_find_dist > direct_dist:
                     unique_direct_finds[item] = direct_dist
-                # print(
-                #     f"{st} found {item}, dist {direct_dist}, {unique_direct_finds}",
-                # )
 
         # if no direct matches found or param set
         # look for off by fuzzy_threshold mistakes
@@ -194,7 +191,7 @@ def get_similar(
                         print_table=print_table,
                     )
 
-                    if fuzzy_dist <= fuzzy_threshold + max_threshold_expansion:
+                    if fuzzy_dist <= fuzzy_threshold + max_threshold_extension:
                         # if found prev., keep only smaller dist
                         prev_fuzzy_find_dist = unique_fuzzy_finds.get(item)
                         if (
@@ -209,27 +206,25 @@ def get_similar(
     )
 
     # refine fuzzy results:
-    # findings include all for dist + max_threshold_expansion.
+    # findings include all for dist + max_threshold_extension.
     # this will find "Meister Eder" for "bla", bc Eder-bla dist = 4. So
     # reduce results to findings with minimal distance by increasing
-    # dist by one up to fuzzy_threshold + max_threshold_expansion.
+    # dist by one up to fuzzy_threshold + max_threshold_extension.
     # worst case: if eder-bla is the only match, this will be returned.
     # tbd if useful.
     closest_fuzzy_find = None
     exp_step = 0
-    while not closest_fuzzy_find and exp_step <= max_threshold_expansion:
+    while not closest_fuzzy_find and exp_step <= max_threshold_extension:
         # walk all finds backwards until some find with minimal dist.
         # expects fuzzy finds sorted.
-        min_dist = fuzzy_threshold - max_threshold_expansion + exp_step
+        min_dist = fuzzy_threshold - max_threshold_extension + exp_step
         closest_fuzzy_find = [
             (find, dist)
             for find, dist in fuzzy_finds_extended_list_sorted
             if dist == min_dist
         ]
         exp_step += 1
-    print(f"dir: {unique_direct_finds}")
-    print(f"exp: {fuzzy_finds_extended_list_sorted}")
-    print(f"clo: {closest_fuzzy_find}")
+
     unique_direct_finds = sorted(
         unique_direct_finds.items(),
         key=lambda dist: dist[1],
