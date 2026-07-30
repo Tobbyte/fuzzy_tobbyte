@@ -122,7 +122,9 @@ def dissect_string(raw_search_term: str) -> dict[str, list[str]]:
     """
     return {raw_search_term: raw_search_term.lower().strip().split()}
 
-
+# TODO:
+# - sets even when filled double (item, dist_a), (same_item, dist_b)
+#   instead of dicts?
 def get_similar(
     db: list[str],
     search_term: str,
