@@ -2,10 +2,7 @@
 
 """
 Limitations:
-    - expects at least any first char of search term matching comp items
     - doest not optimize search in any meaningful way
-    - when searching f.e. for "the" not all results containing "the"
-      are returned, bc results are still restricted by distance.
 """
 
 """
@@ -14,12 +11,11 @@ Limitations:
 
 """
 TODO:
-  - make checking for first letter matching optional
-  - retry without checking for first letter matching if no results
   - extend docstring by what fn is used for
 """
 __all__ = ["get_similar"]  # public method
 
+FUZZY_DIST = 2
 
 def _print_fuzzy_table(table: list, str1: str, str2: str) -> None:
     """Pretty print the table."""
@@ -116,25 +112,14 @@ def _init_table(str1: str, str2: str) -> list:
     return data_matrix
 
 
-def _any_first_char_matching(term1: str, term2: str) -> bool:
-    """Check if any word chare the first letter."""
-    lterm1 = term1.split()
-    lterm2 = term2.split()
-    for w1 in lterm1:
-        for w2 in lterm2:
-            if w1 and w2 and w1[0] == w2[0]:
-                return True
-    return False
 
-
-def sanitize_search_term(raw_search_term: str) -> list[str]:
+def sanitize_search_term(raw_search_term: str) -> dict[str, list[str]]:
     """Sanitize the users search term.
 
-    Returns a list of entered search terms.
-    - Strip whitespaces
-    - Split on whitespace in between words
+    Returns a dict of original search term to
+    list of lowered and stripped and split on whitespaces.
     """
-    return raw_search_term.strip().split()
+    return {raw_search_term: raw_search_term.lower().strip().split()}
 
 
 def get_similar(
@@ -152,26 +137,55 @@ def get_similar(
     prints (every) table
     """
     similar_results: list[tuple] = []
+    st_lowered_san = sanitize_search_term(search_term)
+    unique_direct_finds = set()
     for item in db:
-        dist = _calc_distance(
-            search_term.lower(),
-            item.lower(),
-            print_table=print_table,
-        )
+        san_item = sanitize_search_term(item)
+        item_lowered = item.lower()
 
-        # naively demand first char matching
-        if dist <= threshold and _any_first_char_matching(
-            search_term.lower(),
-            item.lower(),
-        ):
-            similar_results.append((item, dist))
+        # direct matches?
+        # search for direct matches of any part of the search term(s)
+        # directly being part of one of the db items (parts).
+        for st in st_lowered_san[search_term]:
+            if st in item_lowered:
+                unique_direct_finds.add(item_lowered)
+
+        # if no direct matches found, look for off by two mistakes
+        fuzzy_by_one_finds = set()
+        if not unique_direct_finds:
+            # für jeden teil vom search term
+            # calc distance zu jedem teil vom item
+            # wenn dist == FUZZY_DIST its off by one
+            # nehme nur die länge vom search term teil zum vergleich
+            for search_term_part in st_lowered_san[search_term]:
+                for item_part in san_item[item]:
+                    short_item_part = item_part[: len(search_term_part) + 1]
+                    dist = _calc_distance(
+                        search_term_part,
+                        short_item_part,
+                        print_table=print_table,
+                    )
+                    if dist == FUZZY_DIST:
+                        fuzzy_by_one_finds.add((item, search_term))
+
+    for find in unique_direct_finds:
+        print(f"direct: '{find}' found by '{search_term}'")
+    for find in fuzzy_by_one_finds:
+        print(f"fuzzy: '{find}' found by '{search_term}'")
 
     return sorted(similar_results, key=lambda dist: dist[1])
 
 
 if __name__ == "__main__":
-    testdb = ["bl", "bla2", "hurtz", "blap"]
-    testsearch = "blabla"
+    testdb = [
+        "the bl",
+        "the bla2",
+        "hurtz bla",
+        "blap",
+        "the longest blubb",
+        "Meister Eder",
+    ]
+    testsearch = "Moster"
+    print(f"searchterm: {testsearch} testdata: {testdb}")
     testthreshold = 5
-    print(sanitize_search_term("   asd1   asd2.asd asd"))
     print(get_similar(testdb, testsearch, testthreshold))
