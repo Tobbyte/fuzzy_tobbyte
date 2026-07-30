@@ -160,4 +160,7 @@ def get_similar(
 
 
 if __name__ == "__main__":
-    print(get_similar(["bl", "bla2", "hurtz", "blap"], "blabla", 5))
+    testdb = ["bl", "bla2", "hurtz", "blap"]
+    testsearch = "blabla"
+    testthreshold = 5
+    print(get_similar(testdb, testsearch, testthreshold))
