@@ -14,19 +14,11 @@ Limitations:
 
 """
 TODO:
-  - extend excluded_terms list (now only "the")
   - make checking for first letter matching optional
   - retry without checking for first letter matching if no results
   - extend docstring by what fn is used for
 """
-
 __all__ = ["get_similar"]  # public method
-
-"""
-Terms to be excluded from search term or comparison items.
-Used to not pollute the search threshold with filler words.
-"""
-excluded_terms = ["the"]
 
 
 def _print_fuzzy_table(table: list, str1: str, str2: str) -> None:
@@ -124,26 +116,6 @@ def _init_table(str1: str, str2: str) -> list:
     return data_matrix
 
 
-def _term_is_excluded(term: str) -> bool:
-    """Check if the term is in excluded list."""
-    return term.strip() in excluded_terms
-
-
-def _strip_excluded_terms(term: str) -> str:
-    """Strip any items from input that are in exclude list."""
-    stripped = term
-
-    # prevent excluding self
-    if not _term_is_excluded(stripped):
-        for exc in excluded_terms:
-            stripped = stripped.replace(
-                exc + " ",
-                "",
-            )  # add " " to find only at beginning
-
-    return stripped
-
-
 def _any_first_char_matching(term1: str, term2: str) -> bool:
     """Check if any word chare the first letter."""
     lterm1 = term1.split()
@@ -169,25 +141,18 @@ def get_similar(
     Takes a threshold for the distance calculation and optionally
     prints (every) table
     """
-    search_term_wo_excluded = _strip_excluded_terms(search_term).lower()
-
     similar_results: list[tuple] = []
     for item in db:
-        item_wo_excluded = item.lower()
-        # prevent no results when search term is in excluded list
-        if not _term_is_excluded(search_term):
-            item_wo_excluded = _strip_excluded_terms(item.lower())
-
         dist = _calc_distance(
-            search_term_wo_excluded,
-            item_wo_excluded,
+            search_term.lower(),
+            item.lower(),
             print_table=print_table,
         )
 
         # naively demand first char matching
         if dist <= threshold and _any_first_char_matching(
-            search_term_wo_excluded,
-            item_wo_excluded,
+            search_term.lower(),
+            item.lower(),
         ):
             similar_results.append((item, dist))
 
@@ -195,4 +160,4 @@ def get_similar(
 
 
 if __name__ == "__main__":
-    pass
+    print(get_similar(["bl", "bla2", "hurtz", "blap"], "blabla", 5))
