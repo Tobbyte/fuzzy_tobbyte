@@ -145,6 +145,9 @@ def get_similar(
     Can take multi part search terms and or db items. Both get lowered
     for comparison and stripped off and by whitespaces.
     Does not sanitize by any other means.
+    Since fuzzy results have potentially reconstructed distances, the
+    returned dist is contrary expectation not necessary bound by
+    fuzzy_threshold + max_threshold_extension.
     Optionally prints (every!) table.
 
     Args:
@@ -173,6 +176,7 @@ def get_similar(
                     st,
                     item_lowered,
                 )
+
                 # if found prev., keep only smaller dist
                 prev_find_dist = unique_direct_finds.get(item)
                 if not prev_find_dist or prev_find_dist > direct_dist:
@@ -187,11 +191,13 @@ def get_similar(
             for search_term_part in search_term_split[search_term]:
                 for item_part in item_split[item]:
                     short_item_part = item_part[: len(search_term_part) + 1]
+                    # TODO shortening still relevant?
                     fuzzy_dist = _calc_distance(
                         search_term_part,
                         short_item_part,
                         print_table=print_table,
                     )
+                    print(f"st: {st}, item: {item}, dist: {fuzzy_dist}")
 
                     if fuzzy_dist <= fuzzy_threshold + max_threshold_extension:
                         # if found prev., keep only smaller dist
@@ -234,9 +240,32 @@ def get_similar(
 
     search_results.extend(unique_direct_finds)
     if closest_fuzzy_find:
+        # the dist we have for fuzzy is per split item and
+        # split search term. for accurate return of
+        # final results, reconstruct dist to complete
+        # item (and search term?)
+        # "the bl"-"bla": dist_per_part = 1 (bl[a])
+        # correct would be dist = 5
+        # 6 item
+        # 1 dist
+        # 3 search
+        # 5 correct rsult
+        # (len(item) - dist)
+        fuzzy_finds_extended_list_sorted_recon = []
+        for fuzz_find_item, fuzzy_dist in closest_fuzzy_find:
+            complete_dist = len(fuzz_find_item) - fuzzy_dist
+            fuzzy_finds_extended_list_sorted_recon.append((
+                fuzz_find_item,
+                complete_dist,
+            ))
         # important to append and end bc dist of fuzzy finding are only
         # per split search terms vs split item.
-        search_results.extend(closest_fuzzy_find)
+        search_results.extend(fuzzy_finds_extended_list_sorted_recon)
+
+    print(f"dir: {unique_direct_finds}")
+    print(f"ext: {fuzzy_finds_extended_list_sorted}")
+    print(f"clo: {closest_fuzzy_find}")
+    print(f"rec: {fuzzy_finds_extended_list_sorted_recon}")
     return search_results
 
 
@@ -253,3 +282,4 @@ if __name__ == "__main__":
     print(f"searchterm: {testsearch} testdata: {testdb}")
     testthreshold = 5
     print(f"results: {get_similar(testdb, testsearch, always_fuzzy=True)}")
+    print(_calc_distance("bla", "the bl"))
