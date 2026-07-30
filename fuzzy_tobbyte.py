@@ -127,6 +127,16 @@ def _any_first_char_matching(term1: str, term2: str) -> bool:
     return False
 
 
+def sanitize_search_term(raw_search_term: str) -> list[str]:
+    """Sanitize the users search term.
+
+    Returns a list of entered search terms.
+    - Strip whitespaces
+    - Split on whitespace in between words
+    """
+    return raw_search_term.strip().split()
+
+
 def get_similar(
     db: list[str],
     search_term: str,
@@ -163,4 +173,5 @@ if __name__ == "__main__":
     testdb = ["bl", "bla2", "hurtz", "blap"]
     testsearch = "blabla"
     testthreshold = 5
+    print(sanitize_search_term("   asd1   asd2.asd asd"))
     print(get_similar(testdb, testsearch, testthreshold))
