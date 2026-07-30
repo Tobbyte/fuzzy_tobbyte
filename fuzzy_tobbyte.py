@@ -16,6 +16,7 @@ TODO:
 __all__ = ["get_similar"]  # public method
 
 FUZZY_DIST = 2
+FUZZY_MAX_EPANSION = 2
 
 def _print_fuzzy_table(table: list, str1: str, str2: str) -> None:
     """Pretty print the table."""
@@ -113,7 +114,7 @@ def _init_table(str1: str, str2: str) -> list:
 
 
 
-def sanitize_search_term(raw_search_term: str) -> dict[str, list[str]]:
+def dissect_string(raw_search_term: str) -> dict[str, list[str]]:
     """Sanitize the users search term.
 
     Returns a dict of original search term to
@@ -125,55 +126,121 @@ def sanitize_search_term(raw_search_term: str) -> dict[str, list[str]]:
 def get_similar(
     db: list[str],
     search_term: str,
-    threshold: int,
+    fuzzy_threshold: int = FUZZY_DIST,
+    max_threshold_expansion: int = FUZZY_MAX_EPANSION,
     *,
+    always_fuzzy: bool = False,
     print_table: bool = False,
 ) -> list:
     """Return similar words.
 
-    Uses a basic Fussy Search over list:[str] of items and returns
-    similar items and their distance to comparison term[str].
-    Takes a threshold for the distance calculation and optionally
-    prints (every) table
-    """
-    similar_results: list[tuple] = []
-    st_lowered_san = sanitize_search_term(search_term)
-    unique_direct_finds = set()
-    for item in db:
-        san_item = sanitize_search_term(item)
-        item_lowered = item.lower()
+    Looks for direct matches of any part of the search term in any
+    part of the db items. Does not consider capitalization.
+    If null found it uses a basic Fussy Search bound by fuzzy_threshold.
+    The fuzzy search only considers parts of the db items in the length
+    of the length of the original search term parts to better match
+    small typos.
+    Can take multi part search terms and or db items. Both get lowered
+    for comparison and stripped off and by whitespaces.
+    Does not sanitize by any other means.
+    Optionally prints (every!) table.
 
+    Args:
+        db (list[str]): The items to be searched.
+        search_term (str): The search term to be looked for.
+        fuzzy_threshold (int): The max distance to count as match.
+
+    Returns:
+        list[str]: All found matches, sorted by distance.
+
+    """
+    search_results: list[tuple] = []
+    search_term_split = dissect_string(search_term)
+    unique_direct_finds = {}  # dict, not set to prev. same finds by diff. dist
+    unique_fuzzy_finds = {}
+    for item in db:
+        item_split = dissect_string(item)
+        item_lowered = item.lower()
         # direct matches?
         # search for direct matches of any part of the search term(s)
-        # directly being part of one of the db items (parts).
-        for st in st_lowered_san[search_term]:
+        # directly being part of one of the db items.
+        for st in search_term_split[search_term]:
             if st in item_lowered:
-                unique_direct_finds.add(item_lowered)
+                # we dont strictly need dist here. used to sort results.
+                direct_dist = _calc_distance(
+                    st,
+                    item_lowered,
+                )
+                # if found prev., keep only smaller dist
+                prev_find_dist = unique_direct_finds.get(item)
+                if not prev_find_dist or prev_find_dist > direct_dist:
+                    unique_direct_finds[item] = direct_dist
+                # print(
+                #     f"{st} found {item}, dist {direct_dist}, {unique_direct_finds}",
+                # )
 
-        # if no direct matches found, look for off by two mistakes
-        fuzzy_by_one_finds = set()
-        if not unique_direct_finds:
-            # für jeden teil vom search term
-            # calc distance zu jedem teil vom item
-            # wenn dist == FUZZY_DIST its off by one
-            # nehme nur die länge vom search term teil zum vergleich
-            for search_term_part in st_lowered_san[search_term]:
-                for item_part in san_item[item]:
+        # if no direct matches found or param set
+        # look for off by fuzzy_threshold mistakes
+        # exclude already found items
+        if (
+            not unique_direct_finds or always_fuzzy
+        ) and item not in unique_direct_finds:
+            for search_term_part in search_term_split[search_term]:
+                for item_part in item_split[item]:
                     short_item_part = item_part[: len(search_term_part) + 1]
-                    dist = _calc_distance(
+                    fuzzy_dist = _calc_distance(
                         search_term_part,
                         short_item_part,
                         print_table=print_table,
                     )
-                    if dist == FUZZY_DIST:
-                        fuzzy_by_one_finds.add((item, search_term))
 
-    for find in unique_direct_finds:
-        print(f"direct: '{find}' found by '{search_term}'")
-    for find in fuzzy_by_one_finds:
-        print(f"fuzzy: '{find}' found by '{search_term}'")
+                    if fuzzy_dist <= fuzzy_threshold + max_threshold_expansion:
+                        # if found prev., keep only smaller dist
+                        prev_fuzzy_find_dist = unique_fuzzy_finds.get(item)
+                        if (
+                            not prev_fuzzy_find_dist
+                            or prev_fuzzy_find_dist > fuzzy_dist
+                        ):
+                            unique_fuzzy_finds[item] = fuzzy_dist
 
-    return sorted(similar_results, key=lambda dist: dist[1])
+    fuzzy_finds_extended_list_sorted = sorted(
+        unique_fuzzy_finds.items(),
+        key=lambda dist: dist[1],
+    )
+
+    # refine fuzzy results:
+    # findings include all for dist + max_threshold_expansion.
+    # this will find "Meister Eder" for "bla", bc Eder-bla dist = 4. So
+    # reduce results to findings with minimal distance by increasing
+    # dist by one up to fuzzy_threshold + max_threshold_expansion.
+    # worst case: if eder-bla is the only match, this will be returned.
+    # tbd if useful.
+    closest_fuzzy_find = None
+    exp_step = 0
+    while not closest_fuzzy_find and exp_step <= max_threshold_expansion:
+        # walk all finds backwards until some find with minimal dist.
+        # expects fuzzy finds sorted.
+        min_dist = fuzzy_threshold - max_threshold_expansion + exp_step
+        closest_fuzzy_find = [
+            (find, dist)
+            for find, dist in fuzzy_finds_extended_list_sorted
+            if dist == min_dist
+        ]
+        exp_step += 1
+    print(f"dir: {unique_direct_finds}")
+    print(f"exp: {fuzzy_finds_extended_list_sorted}")
+    print(f"clo: {closest_fuzzy_find}")
+    unique_direct_finds = sorted(
+        unique_direct_finds.items(),
+        key=lambda dist: dist[1],
+    )
+
+    search_results.extend(unique_direct_finds)
+    if closest_fuzzy_find:
+        # important to append and end bc dist of fuzzy finding are only
+        # per split search terms vs split item.
+        search_results.extend(closest_fuzzy_find)
+    return search_results
 
 
 if __name__ == "__main__":
@@ -185,7 +252,7 @@ if __name__ == "__main__":
         "the longest blubb",
         "Meister Eder",
     ]
-    testsearch = "Moster"
+    testsearch = input("seach term: ")
     print(f"searchterm: {testsearch} testdata: {testdb}")
     testthreshold = 5
-    print(get_similar(testdb, testsearch, testthreshold))
+    print(f"results: {get_similar(testdb, testsearch, always_fuzzy=True)}")
