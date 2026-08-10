@@ -168,8 +168,17 @@ def get_similar(
         for st in search_term_split:
             # find direct exact matches:
             if st in item_split:
-                direct_finds.setdefault(item, []).append((st, st, 0))
-                continue
+                direct_finds.setdefault(item, []).append((
+                    st,
+                    item_split[item_split.index(st)],
+                    0,
+                ))
+            else:
+                direct_finds.setdefault(item, []).append((
+                    st,
+                    None,
+                    None,
+                ))
 
             for item_part in item_split:
                 # create dist for every st part to every item part
