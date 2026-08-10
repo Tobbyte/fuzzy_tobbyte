@@ -2,72 +2,23 @@
 
 """
 Limitations:
-    - doest not optimize search in any meaningful way
+    - not optimized in any meaningful way
+    - rudimentary sorting order of matches.
 """
 
 """
  ~ Made with ❤️ and without ai or code completion (except intelliSense) ~
 """
 
-"""
-TODO:
-  - extend docstring by what fn is used for
-"""
 __all__ = ["get_similar"]  # public method
 
 FUZZY_DIST = 2
 FUZZY_MAX_EXTENSION = 2
 
-def _print_fuzzy_table(table: list, str1: str, str2: str) -> None:
-    """Pretty print the table."""
-    header = str1
-    column = str2
-
-    first_col_w = len(column)
-    cell_w = len(header)
-
-    # header Row
-    header_row: list[str] = ["_"]
-    for i in range(len(header)):
-        header_row.append(header[: i + 1])  # noqa: PERF401
-
-    # body rows
-    display_rows: list[list[str | int]] = []
-    original_row: list[int | str] = []
-
-    for i, original_row in enumerate(table):
-        row_copy = list(original_row)
-        row_prefix = "_" if i == 0 else column[:i]
-        row_copy.insert(0, row_prefix)
-        display_rows.append(row_copy)
-
-    print()
-
-    # Print header Row
-    print("▦".rjust(first_col_w), end="")
-    # Align to first data column
-    print(" " * (first_col_w + 1), end="")
-
-    for cell in header_row:
-        print(str(cell).ljust(cell_w + 1), end="")
-
-    print("\n")
-
-    # print data rows
-    for row in display_rows:
-        # first cell (row labels)
-        print(str(row[0]).rjust(first_col_w), end=" ")
-
-        for cell in row[1:]:
-            print(str(cell).rjust(cell_w), end=" ")
-        print("\n")
-
 
 def _calc_distance(
     search_term: str,
     compar_term: str,
-    *,
-    print_table: bool = False,
 ) -> int:
     """Calculate the distance between inputs."""
     data_matrix = _init_table(search_term, compar_term)
@@ -84,11 +35,6 @@ def _calc_distance(
                 diag_is_diff = 1
             diag = data_matrix[row - 1][column - 1] + diag_is_diff
             data_matrix[row][column] = min(left_cell, top_cell, diag)
-
-    if print_table:
-        print("\n\n\n\n\n\n")
-        _print_fuzzy_table(data_matrix, search_term, compar_term)
-        print(f"distance: {data_matrix[-1][-1]}")
 
     return data_matrix[-1][-1]
 
@@ -113,7 +59,6 @@ def _init_table(str1: str, str2: str) -> list:
     return data_matrix
 
 
-
 def dissect_string(raw_search_term: str) -> dict[str, list[str]]:
     """Sanitize the users search term.
 
@@ -122,33 +67,25 @@ def dissect_string(raw_search_term: str) -> dict[str, list[str]]:
     """
     return {raw_search_term: raw_search_term.lower().strip().split()}
 
-# TODO:
-# - sets even when filled double (item, dist_a), (same_item, dist_b)
-#   instead of dicts?
+
 def get_similar(
     db: list[str],
     search_term: str,
     fuzzy_threshold: int = FUZZY_DIST,
-    max_threshold_extension: int = FUZZY_MAX_EXTENSION,
-    *,
-    always_fuzzy: bool = False,
-    print_table: bool = False,
-) -> list:
+) -> dict:
     """Return similar words.
 
-    Looks for direct matches of any part of the search term in any
-    part of the db items. Does not consider capitalization.
-    If null found it uses a basic Fussy Search bound by fuzzy_threshold.
+    Does not consider capitalization.
+    Looks for direct matches and fuzzy matches of any part of the search
+    term in any part of the db items.
     The fuzzy search only considers parts of the db items in the length
     of the length of the original search term parts to better match
     small typos.
     Can take multi part search terms and or db items. Both get lowered
     for comparison and stripped off and by whitespaces.
     Does not sanitize by any other means.
-    Since fuzzy results have potentially reconstructed distances, the
-    returned dist is contrary expectation not necessary bound by
-    fuzzy_threshold + max_threshold_extension.
-    Optionally prints (every!) table.
+    Sorts findings by number of matches, prioritizes matches where first
+    parts of query and results match.
 
     Args:
         db (list[str]): The items to be searched.
@@ -156,183 +93,126 @@ def get_similar(
         fuzzy_threshold (int): The max distance to count as match.
 
     Returns:
-        list[str]: All found matches, sorted by distance.
+        dict[str, list[tuple | None]] :
+        - len(list) == len(db_item.split())
+        - list item:
+            - None for no match of db_item part (ip)
+              to search_term part (sp),
+            - (sp, ip, dist) for matches
+        f.e. db_item "münchen mitte" and search_term "berlin mitte":
+        returns {"münchen mitte": [None, ('mitte', 'mite', 1)]}
 
     """
     search_term_split = dissect_string(search_term)[search_term]
-    direct_finds = {}  # dict, not set to prev. same finds by diff. dist
-    fuzzy_finds = {}  # dict, not set to prev. same finds by diff. dist
+    matches = {}
+    already_matched_st = []
+    already_matched_ip = []
+
     for item in db:
         item_split = dissect_string(item)[item]
 
         for st in search_term_split:
             # find direct exact matches:
             if st in item_split:
-                direct_finds.setdefault(item, []).append((
+                matches.setdefault(item, []).append((
                     st,
                     item_split[item_split.index(st)],
                     0,
                 ))
-            else:
-                direct_finds.setdefault(item, []).append((
-                    st,
-                    None,
-                    None,
-                ))
+                already_matched_st.append(item_split[item_split.index(st)])
 
-            for item_part in item_split:
+            for i in range(len(item_split)):
+                item_part = item_split[i]
                 # create dist for every st part to every item part
-                dist = _calc_distance(
-                    st,
-                    item_part,
-                )
-                if dist <= fuzzy_threshold:
-                    fuzzy_finds.setdefault(item, []).append((
+                if item_part not in already_matched_st:
+                    dist = _calc_distance(
                         st,
                         item_part,
-                        dist,
-                    ))
+                    )
+                    if dist <= fuzzy_threshold:
+                        matches.setdefault(item, []).insert(
+                            i,
+                            (
+                                st,
+                                item_part,
+                                dist,
+                            ),
+                        )
+                        already_matched_ip.append(item_part)
 
-    print(f"direc: {direct_finds}")
-    print(f"fuzzy: {fuzzy_finds}")
-    unique_results = [(res) for item, res in direct_finds.items()] + [
-        (res) for item, res in fuzzy_finds.items()
+        # fill with Nones for item_parts not matched direct or fuzzy.
+        # Used for sorting order of results.
+        for i in range(len(item_split)):
+            item_part = item_split[i]
+            if (
+                item in matches
+                and item_part not in already_matched_st
+                and item_part not in already_matched_ip
+            ):
+                matches[item].insert(i, None)
+
+    # TODO: sort to weight order of results ascending
+    # multiple matches direct                           ✓
+    # multiple matches fuzzy                            ✓
+    # partial matches where first terms match           ✓
+    # partial matches where first terms Not matches     ✓
+    # account in sort by dist:
+    ## query "hurtz berlin mitte" for search term "berlin mitte"
+    ## should be at top because it is partial, BUT
+    ## the rest matches with dist 0.
+
+    # sort by number of matches of split search term to split db item
+    matches_by_num_of_matches = dict(
+        sorted(
+            matches.items(),
+            key=lambda item: sum(1 for n in item[1] if n is not None),
+            reverse=True,
+        ),
+    )
+
+    # construct table which results have a None before a match
+    none_in_front_table = [
+        _none_in_res_in_front(res)
+        for res in matches_by_num_of_matches.values()
     ]
-    # unique_results = set(direct_finds.keys()).union(set(fuzzy_finds.keys()))
-    search_results = unique_results
-    #     sts = sorted(search_term_split[search_term])
-    #     its = sorted(item_split[item])
 
-    #     max_i = max(
-    #         len(sts),
-    #         len(its),
-    #     )
+    matches_by_not_none_in_front = matches_by_num_of_matches
 
-    #     i = 0
-    #     while i < max_i:
-    #         search_term_part = sts[i] if i < len(sts) else ""
-    #         item_part = its[i] if i < len(its) else ""
+    # move partially matches where first term not matches to the back
+    if none_in_front_table:
+        paired = list(
+            zip(
+                matches_by_not_none_in_front.items(),
+                none_in_front_table,
+                strict=False,
+            ),
+        )
+        paired.sort(key=lambda x: x[1])  # False < True
+        matches_by_not_none_in_front = dict(k for k, v in paired)
 
-    #         i += 1
+    return matches_by_not_none_in_front
 
-    #     item_lowered = item.lower()
-    #     for st in search_term_split[search_term]:
-    #         if st in item_lowered:
-    #             # we dont strictly need dist here. used to sort results.
-    #             direct_dist = _calc_distance(
-    #                 search_term,
-    #                 item_lowered,
-    #             )
-    #             direct_finds[item] = direct_dist
-    #             continue
-    #     st = None
-    #     item_split = dissect_string(item)
-    #     # if no direct matches found or param set
-    #     # look for off by fuzzy_threshold mistakes
-    #     # exclude already found items
-    #     if not direct_finds or always_fuzzy:
-    #         # TODO: skip prev found items?  and item not in direct_finds
-    #         # TODO: skip parts < n chars.
-    #         # TODO: benefit comparing only len of search part?
 
-    #         # TODO: make sure all parts are checked on uneven len.
-
-    #         # sort to match words against similar length
-    #         sts = sorted(search_term_split[search_term])
-    #         its = sorted(item_split[item])
-    #         max_i = max(
-    #             len(sts),
-    #             len(its),
-    #         )
-
-    #         i = 0
-    #         while i < max_i:
-    #             if item in direct_finds:
-    #                 break
-
-    #             search_term_part = sts[i] if i < len(sts) else ""
-    #             item_part = its[i] if i < len(its) else ""
-
-    #             fuzzy_dist = _calc_distance(
-    #                 search_term_part,
-    #                 item_part,
-    #             )
-    #             print(
-    #                 f"fuzz: stp: {search_term_part}, itemp: {item_part}, dist: {fuzzy_dist}",
-    #             )
-    #             # if fuzzy_dist <= fuzzy_threshold + max_threshold_extension:
-    #             fuzzy_finds.setdefault(item, []).append(
-    #                 fuzzy_dist,
-    #             )
-
-    #             i += 1
-
-    # print(f"dir: {direct_finds}")
-    # print(f"fuz: {fuzzy_finds}")
-
-    # fuzzy_finds = sorted(
-    #     fuzzy_finds.items(),
-    #     key=lambda dist: sum(dist[1]),
-    # )
-    # print(f"fuzs: {fuzzy_finds}")
-    # # refine fuzzy results:
-    # # findings include all for dist + max_threshold_extension.
-    # # this will find "Meister Eder" for "bla", bc Eder-bla dist = 4. So
-    # # reduce results to findings with minimal distance by increasing
-    # # dist by one up to fuzzy_threshold + max_threshold_extension.
-    # # worst case: if eder-bla is the only match, this will be returned.
-    # # tbd if useful.
-    # closest_fuzzy_find = None
-    # exp_step = 0
-    # while not closest_fuzzy_find and exp_step <= max_threshold_extension:
-    #     # walk all finds until some find with minimal dist.
-    #     # expects fuzzy finds sorted.
-    #     min_dist = fuzzy_threshold - max_threshold_extension + exp_step
-    #     closest_fuzzy_find = [
-    #         (find, dist) for find, dist in fuzzy_finds if min(dist) == min_dist
-    #     ]
-    #     exp_step += 1
-    # print(f"clo: {closest_fuzzy_find}")
-    # direct_finds = sorted(
-    #     direct_finds.items(),
-    #     key=lambda dist: dist[1],
-    # )
-
-    # search_results.extend(direct_finds)
-    # fuzzy_finds_recon = []
-    # if closest_fuzzy_find:
-    #     # the dist we have for fuzzy is per split item and
-    #     # split search term. for accurate return of
-    #     # final results, reconstruct dist to complete
-    #     # item (and search term?)
-    #     # "the bl"-"bla": dist_per_part = 1 (bl[a])
-    #     # correct would be dist = 5
-    #     # 6 item
-    #     # 1 dist
-    #     # 3 search
-    #     # 5 correct rsult
-    #     # (len(item) - dist)
-    #     for fuzz_find_item, fuzzy_dist in closest_fuzzy_find:
-    #         fuzzy_finds_recon.append((
-    #             fuzz_find_item,
-    #             min(fuzzy_dist),
-    #         ))
-    #     # important to append and end bc dist of fuzzy finding are only
-    #     # per split search terms vs split item.
-    #     search_results.extend(fuzzy_finds_recon)
-
-    # print(f"rec: {fuzzy_finds_recon}")
-    return search_results
+def _none_in_res_in_front(li: list) -> bool:
+    """Check if a None is in front of a not-None in a List."""
+    if None in li:
+        none_i = li.index(None)
+        for i in range(len(li)):
+            item = li[i]
+            if item is not None and i < none_i:  # noqa: SIM103
+                return False
+            return True
+    return False
 
 
 if __name__ == "__main__":
     db = [
-        "berlin mitte",
+        "hurtz berlin mitte",
+        "münchen mite",
         "berlin neukölln",
         "berlin",
-        "bertin mitte",  # Tippfehler in Teil 1
-        "berlin mite",  # Tippfehler in Teil 2
-        "münchen mitte",
+        "bertin mitte",
+        "berlin mite",
         "hamburg altona",
         "frankfurt",
         "frankfurt am main",
@@ -344,14 +224,9 @@ if __name__ == "__main__":
         "xyz",
     ]
 
-    search_term = "berlin mitte"
-    # testsearch = input("seach term: ")
-    testsearch = "hutz Eder"
-    testthreshold = 5
-    results = get_similar(db, search_term, always_fuzzy=True)
-    print()
-    print(f"search_term: {search_term} ")
-    for r in results:
-        print(r)
-    # for t in db:
-    #     print(f"{search_term}, {t}: {_calc_distance(t, testsearch)}")
+    # search_term = "berlin mitte"
+    search_term = input("search term: ")
+    results = get_similar(db, search_term)
+    print(f"\nsearch_term: {search_term} ")
+    for k, v in results.items():
+        print(k, v)
