@@ -70,7 +70,7 @@ def get_similar(
     db: list[str],
     search_term: str,
     fuzzy_threshold: int = FUZZY_DIST_DEFAULT,
-) -> dict:
+) -> list[str]:
     """Return similar words.
 
     Does not consider capitalization.
@@ -187,6 +187,17 @@ def get_similar(
         )
         paired.sort(key=lambda x: x[1])  # False < True
         matches_by_not_none_in_front = dict(k for k, v in paired)
+
+    # sort by average distance of (partial) matches
+    sorted_by_distance = dict(
+        sorted(
+            matches_by_not_none_in_front.items(),
+            # key=lambda item: total_distance(item[1]),
+            key=lambda item: avg_distance(item[1]),
+        ),
+    )
+
+    return list(sorted_by_distance.keys())
 
 
 def avg_distance(matches: list) -> float:
