@@ -188,7 +188,16 @@ def get_similar(
         paired.sort(key=lambda x: x[1])  # False < True
         matches_by_not_none_in_front = dict(k for k, v in paired)
 
-    return matches_by_not_none_in_front
+
+def avg_distance(matches: list) -> float:
+    """Calculate the average distance of matches."""
+    dists = [m[2] for m in matches if m is not None]
+    return sum(dists) / len(dists) if dists else float("inf")
+
+
+def total_distance(matches: list) -> int:
+    """Calculate the total distance of matches."""
+    return sum(m[2] for m in matches if m is not None)
 
 
 def _none_in_res_in_front(li: list) -> bool:
