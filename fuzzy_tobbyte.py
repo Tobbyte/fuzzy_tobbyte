@@ -12,8 +12,7 @@ Limitations:
 
 __all__ = ["get_similar"]  # public method
 
-FUZZY_DIST = 2
-FUZZY_MAX_EXTENSION = 2
+FUZZY_DIST_DEFAULT = 2
 
 
 def _calc_distance(
@@ -71,7 +70,7 @@ def dissect_string(raw_search_term: str) -> dict[str, list[str]]:
 def get_similar(
     db: list[str],
     search_term: str,
-    fuzzy_threshold: int = FUZZY_DIST,
+    fuzzy_threshold: int = FUZZY_DIST_DEFAULT,
 ) -> dict:
     """Return similar words.
 
