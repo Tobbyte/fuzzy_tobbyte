@@ -1,12 +1,11 @@
-"""Fuzzy Search implementation using naive Levenshtein algorithm."""
+"""Fuzzy Search implementation using naive Levenshtein algorithm.
 
-"""
 Limitations:
     - not optimized in any meaningful way
     - rudimentary sorting order of matches.
-"""
 
-"""
+Version: 2.0.5
+
  ~ Made with ❤️ and without ai or code completion (except intelliSense) ~
 """
 
