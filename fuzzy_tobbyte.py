@@ -1,84 +1,22 @@
-"""Fuzzy Search implementation using naive Levenshtein algorithm."""
+"""Fuzzy Search implementation using naive Levenshtein algorithm.
 
-"""
 Limitations:
-    - expects at least any first char of search term matching comp items
-    - doest not optimize search in any meaningful way
-    - when searching f.e. for "the" not all results containing "the"
-      are returned, bc results are still restricted by distance.
-"""
+    - not optimized in any meaningful way
+    - rudimentary sorting order of matches.
 
-"""
+Version: 2.0.5
+
  ~ Made with ❤️ and without ai or code completion (except intelliSense) ~
-"""
-
-"""
-TODO:
-  - extend excluded_terms list (now only "the")
-  - make checking for first letter matching optional
-  - retry without checking for first letter matching if no results
-  - extend docstring by what fn is used for
 """
 
 __all__ = ["get_similar"]  # public method
 
-"""
-Terms to be excluded from search term or comparison items.
-Used to not pollute the search threshold with filler words.
-"""
-excluded_terms = ["the"]
-
-
-def _print_fuzzy_table(table: list, str1: str, str2: str) -> None:
-    """Pretty print the table."""
-    header = str1
-    column = str2
-
-    first_col_w = len(column)
-    cell_w = len(header)
-
-    # header Row
-    header_row: list[str] = ["_"]
-    for i in range(len(header)):
-        header_row.append(header[: i + 1])  # noqa: PERF401
-
-    # body rows
-    display_rows: list[list[str | int]] = []
-    original_row: list[int | str] = []
-
-    for i, original_row in enumerate(table):
-        row_copy = list(original_row)
-        row_prefix = "_" if i == 0 else column[:i]
-        row_copy.insert(0, row_prefix)
-        display_rows.append(row_copy)
-
-    print()
-
-    # Print header Row
-    print("▦".rjust(first_col_w), end="")
-    # Align to first data column
-    print(" " * (first_col_w + 1), end="")
-
-    for cell in header_row:
-        print(str(cell).ljust(cell_w + 1), end="")
-
-    print("\n")
-
-    # print data rows
-    for row in display_rows:
-        # first cell (row labels)
-        print(str(row[0]).rjust(first_col_w), end=" ")
-
-        for cell in row[1:]:
-            print(str(cell).rjust(cell_w), end=" ")
-        print("\n")
+FUZZY_DIST_DEFAULT = 2
 
 
 def _calc_distance(
     search_term: str,
     compar_term: str,
-    *,
-    print_table: bool = False,
 ) -> int:
     """Calculate the distance between inputs."""
     data_matrix = _init_table(search_term, compar_term)
@@ -95,11 +33,6 @@ def _calc_distance(
                 diag_is_diff = 1
             diag = data_matrix[row - 1][column - 1] + diag_is_diff
             data_matrix[row][column] = min(left_cell, top_cell, diag)
-
-    if print_table:
-        print("\n\n\n\n\n\n")
-        _print_fuzzy_table(data_matrix, search_term, compar_term)
-        print(f"distance: {data_matrix[-1][-1]}")
 
     return data_matrix[-1][-1]
 
@@ -124,75 +57,174 @@ def _init_table(str1: str, str2: str) -> list:
     return data_matrix
 
 
-def _term_is_excluded(term: str) -> bool:
-    """Check if the term is in excluded list."""
-    return term.strip() in excluded_terms
+def dissect_string(raw_search_term: str) -> dict[str, list[str]]:
+    """Sanitize the users search term.
 
-
-def _strip_excluded_terms(term: str) -> str:
-    """Strip any items from input that are in exclude list."""
-    stripped = term
-
-    # prevent excluding self
-    if not _term_is_excluded(stripped):
-        for exc in excluded_terms:
-            stripped = stripped.replace(
-                exc + " ",
-                "",
-            )  # add " " to find only at beginning
-
-    return stripped
-
-
-def _any_first_char_matching(term1: str, term2: str) -> bool:
-    """Check if any word chare the first letter."""
-    lterm1 = term1.split()
-    lterm2 = term2.split()
-    for w1 in lterm1:
-        for w2 in lterm2:
-            if w1 and w2 and w1[0] == w2[0]:
-                return True
-    return False
+    Returns a dict of original search term to
+    list of lowered and stripped and split on whitespaces.
+    """
+    return {raw_search_term: raw_search_term.lower().strip().split()}
 
 
 def get_similar(
     db: list[str],
     search_term: str,
-    threshold: int,
-    *,
-    print_table: bool = False,
-) -> list:
+    fuzzy_threshold: int = FUZZY_DIST_DEFAULT,
+) -> dict:
     """Return similar words.
 
-    Uses a basic Fussy Search over list:[str] of items and returns
-    similar items and their distance to comparison term[str].
-    Takes a threshold for the distance calculation and optionally
-    prints (every) table
+    Does not consider capitalization.
+    Looks for direct matches and fuzzy matches of any part of the search
+    term in any part of the db items.
+    The fuzzy search only considers parts of the db items in the length
+    of the length of the original search term parts to better match
+    small typos.
+    Can take multi part search terms and or db items. Both get lowered
+    for comparison and stripped off and by whitespaces.
+    Does not sanitize by any other means.
+    Sorts findings by number of matches, prioritizes matches where first
+    parts of query and results match.
+
+    Args:
+        db (list[str]): The items to be searched.
+        search_term (str): The search term to be looked for.
+        fuzzy_threshold (int): The max distance to count as match.
+
+    Returns:
+        dict[str, list[tuple | None]] :
+        - len(list) == len(db_item.split())
+        - list item:
+            - None for no match of db_item part (ip)
+              to search_term part (sp),
+            - (sp, ip, dist) for matches
+        f.e. db_item "münchen mitte" and search_term "berlin mitte":
+        returns {"münchen mitte": [None, ('mitte', 'mite', 1)]}
+
     """
-    search_term_wo_excluded = _strip_excluded_terms(search_term).lower()
+    search_term_split = dissect_string(search_term)[search_term]
+    matches = {}
+    already_matched_st = []
+    already_matched_ip = []
 
-    similar_results: list[tuple] = []
     for item in db:
-        item_wo_excluded = item.lower()
-        # prevent no results when search term is in excluded list
-        if not _term_is_excluded(search_term):
-            item_wo_excluded = _strip_excluded_terms(item.lower())
+        item_split = dissect_string(item)[item]
 
-        dist = _calc_distance(
-            search_term_wo_excluded,
-            item_wo_excluded,
-            print_table=print_table,
+        for st in search_term_split:
+            # find direct exact matches:
+            if st in item_split:
+                matches.setdefault(item, []).append((
+                    st,
+                    item_split[item_split.index(st)],
+                    0,
+                ))
+                already_matched_st.append(item_split[item_split.index(st)])
+
+            for i in range(len(item_split)):
+                item_part = item_split[i]
+                # create dist for every st part to every item part
+                if item_part not in already_matched_st:
+                    dist = _calc_distance(
+                        st,
+                        item_part,
+                    )
+                    if dist <= fuzzy_threshold:
+                        matches.setdefault(item, []).insert(
+                            i,
+                            (
+                                st,
+                                item_part,
+                                dist,
+                            ),
+                        )
+                        already_matched_ip.append(item_part)
+
+        # fill with Nones for item_parts not matched direct or fuzzy.
+        # Used for sorting order of results.
+        for i in range(len(item_split)):
+            item_part = item_split[i]
+            if (
+                item in matches
+                and item_part not in already_matched_st
+                and item_part not in already_matched_ip
+            ):
+                matches[item].insert(i, None)
+
+    # TODO: sort to weight order of results ascending
+    # multiple matches direct                           ✓
+    # multiple matches fuzzy                            ✓
+    # partial matches where first terms match           ✓
+    # partial matches where first terms Not matches     ✓
+    # account in sort by dist:
+    ## query "hurtz berlin mitte" for search term "berlin mitte"
+    ## should be at top because it is partial, BUT
+    ## the rest matches with dist 0.
+
+    # sort by number of matches of split search term to split db item
+    matches_by_num_of_matches = dict(
+        sorted(
+            matches.items(),
+            key=lambda item: sum(1 for n in item[1] if n is not None),
+            reverse=True,
+        ),
+    )
+
+    # construct table which results have a None before a match
+    none_in_front_table = [
+        _none_in_res_in_front(res)
+        for res in matches_by_num_of_matches.values()
+    ]
+
+    matches_by_not_none_in_front = matches_by_num_of_matches
+
+    # move partially matches where first term not matches to the back
+    if none_in_front_table:
+        paired = list(
+            zip(
+                matches_by_not_none_in_front.items(),
+                none_in_front_table,
+                strict=False,
+            ),
         )
+        paired.sort(key=lambda x: x[1])  # False < True
+        matches_by_not_none_in_front = dict(k for k, v in paired)
 
-        # naively demand first char matching
-        if dist <= threshold and _any_first_char_matching(
-            search_term_wo_excluded,
-            item_wo_excluded,
-        ):
-            similar_results.append((item, dist))
+    return matches_by_not_none_in_front
 
-    return sorted(similar_results, key=lambda dist: dist[1])
+
+def _none_in_res_in_front(li: list) -> bool:
+    """Check if a None is in front of a not-None in a List."""
+    if None in li:
+        none_i = li.index(None)
+        for i in range(len(li)):
+            item = li[i]
+            if item is not None and i < none_i:  # noqa: SIM103
+                return False
+            return True
+    return False
 
 
 if __name__ == "__main__":
-    pass
+    db = [
+        "hurtz berlin mitte",
+        "münchen mite",
+        "berlin neukölln",
+        "berlin",
+        "bertin mitte",
+        "berlin mite",
+        "hamburg altona",
+        "frankfurt",
+        "frankfurt am main",
+        "köln",
+        "koeln",
+        "stuttgart west",
+        "the long blanket",
+        "blanket",
+        "xyz",
+    ]
+
+    # search_term = "berlin mitte"
+    search_term = input("search term: ")
+    results = get_similar(db, search_term)
+    print(f"\nsearch_term: {search_term} ")
+    for k, v in results.items():
+        print(k, v)
