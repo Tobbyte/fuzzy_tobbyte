@@ -4,7 +4,7 @@ Limitations:
     - not optimized in any meaningful way
     - rudimentary sorting order of matches.
 
-Version: 2.0.5
+Version: 2.1.0
 
  ~ Made with ❤️ and without ai or code completion (except intelliSense) ~
 """
