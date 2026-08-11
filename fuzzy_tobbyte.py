@@ -256,5 +256,5 @@ if __name__ == "__main__":
     search_term = input("search term: ")
     results = get_similar(db, search_term)
     print(f"\nsearch_term: {search_term} ")
-    for k, v in results.items():
-        print(k, v)
+    for r in results:
+        print(r)
