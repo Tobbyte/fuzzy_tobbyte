@@ -91,14 +91,14 @@ def get_similar(
         fuzzy_threshold (int): The max distance to count as match.
 
     Returns:
-        dict[str, list[tuple | None]] :
-        - len(list) == len(db_item.split())
-        - list item:
-            - None for no match of db_item part (ip)
-              to search_term part (sp),
-            - (sp, ip, dist) for matches
-        f.e. db_item "münchen mitte" and search_term "berlin mitte":
-        returns {"münchen mitte": [None, ('mitte', 'mite', 1)]}
+        list[str]: List of db items that are similar to the search term.
+
+    Todo:
+        - export sort by total / avg by param
+        - exclude words of matching when
+            len(word) == FUZZY_DIST_DEFAULT (+ x ?). So that no longer
+            "ab" matches "cd". require first char the same? tbd.
+        - tbd: split on special chars like "-"?
 
     """
     search_term_split = dissect_string(search_term)[search_term]
@@ -149,15 +149,22 @@ def get_similar(
             ):
                 matches[item].insert(i, None)
 
-    # TODO: sort to weight order of results ascending
+    # now we have:
+    # dict[str, list[tuple | None]] :
+    #     - where len(list) is len(db_item.split())
+    #     - list items are:
+    #         - for no match of db_item part (ip)
+    #           to search_term part (sp): "None",
+    #         - for matches of ip and sp: "(sp, ip, dist)"
+    #     f.e. db_item "münchen mitte" and search_term "berlin mitte":
+    #     returns {"münchen mitte": [None, ('mitte', 'mite', 1)]}
+
+    # sort to weight order of results ascending:
     # multiple matches direct                           ✓
     # multiple matches fuzzy                            ✓
     # partial matches where first terms match           ✓
-    # partial matches where first terms Not matches     ✓
-    # account in sort by dist:
-    ## query "hurtz berlin mitte" for search term "berlin mitte"
-    ## should be at top because it is partial, BUT
-    ## the rest matches with dist 0.
+    # partial matches where first terms NOT matches     ✓
+    # sort by dist (total or average of distances):     ✓
 
     # sort by number of matches of split search term to split db item
     matches_by_num_of_matches = dict(
@@ -225,15 +232,18 @@ def _none_in_res_in_front(li: list) -> bool:
 
 if __name__ == "__main__":
     db = [
+        "HMS QUEEN ELIZABETH",
         "hurtz berlin mitte",
         "münchen mite",
         "berlin neukölln",
         "berlin",
         "bertin mitte",
+        "USS Theodore Rooseve",
         "berlin mite",
         "hamburg altona",
         "frankfurt",
         "frankfurt am main",
+        "ussu",
         "köln",
         "koeln",
         "stuttgart west",
