@@ -12,7 +12,8 @@ Version: 2.1.1
 __all__ = ["get_similar"]  # public method
 
 FUZZY_DIST_DEFAULT = 2
-
+MIN_MATCH_LEN = 2
+MID_MATCH_LEN = 5
 
 def _calc_distance(
     search_term: str,
@@ -57,13 +58,13 @@ def _init_table(str1: str, str2: str) -> list:
     return data_matrix
 
 
-def dissect_string(raw_search_term: str) -> dict[str, list[str]]:
+def dissect_string(raw_search_term: str) -> list[str]:
     """Sanitize the users search term.
 
     Returns a dict of original search term to
     list of lowered and stripped and split on whitespaces.
     """
-    return {raw_search_term: raw_search_term.lower().strip().split()}
+    return raw_search_term.lower().strip().split()
 
 
 def get_similar(
@@ -77,9 +78,8 @@ def get_similar(
     Looks for direct matches and fuzzy matches of any part of the search
     term in any part of the db items.
     Returns full, direct matches directly and stops searching further.
-    The fuzzy search only considers parts of the db items in the length
-    of the length of the original search term parts to better match
-    small typos.
+    The fuzzy search only dynamically calculates an allowed distance
+    by word length of <= MIN_MATCH_LEN (2) and <= MID_MATCH_LEN (5)
     Can take multi part search terms and or db items. Both get lowered
     for comparison and stripped off and by whitespaces.
     Does not sanitize by any other means.
@@ -95,50 +95,45 @@ def get_similar(
         list[str]: List of db items that are similar to the search term.
 
     Todo:
-        - exclude words of matching when
-            len(word) == FUZZY_DIST_DEFAULT (+ x ?). So that no longer
-            "ab" matches "cd". require first char the same? tbd.
+        - tbd: require first char the same? tbd.
         - tbd: split on special chars like "-"?
         - return first full match or always fuzzy by param
 
     """
-    search_term_split: list[str] = dissect_string(search_term)[search_term]
+    search_term_split: list[str] = dissect_string(search_term)
     matches = {}
 
     for item in db:
         already_matched_st: list[str] = []
         already_matched_ip = []
-        item_split = dissect_string(item)[item]
+        item_split = dissect_string(item)
 
         for st in search_term_split:
             # find direct exact matches:
+            allowed_dist = _get_max_allowed_dist(st, fuzzy_threshold)
+
             if st in item_split:
-                matches.setdefault(item, []).append((
-                    st,
-                    item_split[item_split.index(st)],
-                    0,
-                ))
-                already_matched_st.append(item_split[item_split.index(st)])
+                matched_word = item_split[item_split.index(st)]
+                matches.setdefault(item, []).append((st, matched_word, 0))
+                already_matched_st.append(matched_word)
 
             for i in range(len(item_split)):
                 item_part = item_split[i]
-                # create dist for every st part to every item part
+
                 if (
                     item_part not in already_matched_st
                     and item_part not in already_matched_ip
                 ):
-                    dist = _calc_distance(
-                        st,
-                        item_part,
-                    )
-                    if dist <= fuzzy_threshold:
+                    # create dist for every st part to every item part
+                    # unless we can exit early bc length diffs
+                    if abs(len(st) - len(item_part)) > allowed_dist:
+                        continue
+
+                    dist = _calc_distance(st, item_part)
+                    if dist <= allowed_dist:
                         matches.setdefault(item, []).insert(
                             i,
-                            (
-                                st,
-                                item_part,
-                                dist,
-                            ),
+                            (st, item_part, dist),
                         )
                         already_matched_ip.append(item_part)
 
@@ -209,6 +204,16 @@ def get_similar(
     return list(matches_by_not_none_in_front.keys())
 
 
+def _get_max_allowed_dist(term: str, max_threshold: int) -> int:
+    """Calc max allowed distance based on word length."""
+    length = len(term)
+    if length <= MIN_MATCH_LEN:
+        return 0
+    if length <= MID_MATCH_LEN:
+        return min(1, max_threshold)
+    return max_threshold
+
+
 def _get_sort_value(items_list: list, target_items_count: int) -> float:
     """Rate quality of a match."""
     if None not in items_list:
@@ -253,10 +258,17 @@ if __name__ == "__main__":
         "the long blanket",
         "blanket",
         "xyz",
+        "DISNEY MAGIC",
+        "A",
+        "SAGA",
+        "MIR",
+        "UMA",
+        "MAUD",
+        "DISNEY DREAM",
     ]
 
     # search_term = input("search term: ")
-    search_term = "hu berli mitt"
+    search_term = "disney mag"
     results = get_similar(db, search_term)
     print(f"\nsearch_term: {search_term} ")
     for r in results:
