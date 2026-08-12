@@ -95,7 +95,6 @@ def get_similar(
         list[str]: List of db items that are similar to the search term.
 
     Todo:
-        - export sort by total / avg by param
         - exclude words of matching when
             len(word) == FUZZY_DIST_DEFAULT (+ x ?). So that no longer
             "ab" matches "cd". require first char the same? tbd.
@@ -105,10 +104,10 @@ def get_similar(
     """
     search_term_split: list[str] = dissect_string(search_term)[search_term]
     matches = {}
-    already_matched_st: list[str] = []
-    already_matched_ip = []
 
     for item in db:
+        already_matched_st: list[str] = []
+        already_matched_ip = []
         item_split = dissect_string(item)[item]
 
         for st in search_term_split:
@@ -124,7 +123,10 @@ def get_similar(
             for i in range(len(item_split)):
                 item_part = item_split[i]
                 # create dist for every st part to every item part
-                if item_part not in already_matched_st:
+                if (
+                    item_part not in already_matched_st
+                    and item_part not in already_matched_ip
+                ):
                     dist = _calc_distance(
                         st,
                         item_part,
@@ -140,7 +142,9 @@ def get_similar(
                         )
                         already_matched_ip.append(item_part)
 
-        if set(search_term_split) <= set(already_matched_st):
+        if set(search_term_split) <= set(already_matched_st) and len(
+            search_term_split,
+        ) == len(item_split):
             # all search term parts matched directly db item.
             # no need to look further (except flag thats tbd.)
             return [item]
@@ -171,13 +175,13 @@ def get_similar(
     # multiple matches fuzzy                            ✓
     # partial matches where first terms match           ✓
     # partial matches where first terms NOT matches     ✓
-    # sort by dist (total or average of distances):     ✓
 
     # sort by number of matches of split search term to split db item
+    # uses num of None matches as scoring factor.
     matches_by_num_of_matches = dict(
         sorted(
             matches.items(),
-            key=lambda item: sum(1 for n in item[1] if n is not None),
+            key=lambda item: _get_sort_value(item[1], len(search_term_split)),
             reverse=True,
         ),
     )
@@ -190,7 +194,7 @@ def get_similar(
 
     matches_by_not_none_in_front = matches_by_num_of_matches
 
-    # move partially matches where first term not matches to the back
+    # move partially matches to the back if their first term not matches
     if none_in_front_table:
         paired = list(
             zip(
@@ -202,27 +206,18 @@ def get_similar(
         paired.sort(key=lambda x: x[1])  # False < True
         matches_by_not_none_in_front = dict(k for k, v in paired)
 
-    # sort by average distance of (partial) matches
-    sorted_by_distance = dict(
-        sorted(
-            matches_by_not_none_in_front.items(),
-            # key=lambda item: total_distance(item[1]),
-            key=lambda item: avg_distance(item[1]),
-        ),
-    )
-
-    return list(sorted_by_distance.keys())
+    return list(matches_by_not_none_in_front.keys())
 
 
-def avg_distance(matches: list) -> float:
-    """Calculate the average distance of matches."""
-    dists = [m[2] for m in matches if m is not None]
-    return sum(dists) / len(dists) if dists else float("inf")
-
-
-def total_distance(matches: list) -> int:
-    """Calculate the total distance of matches."""
-    return sum(m[2] for m in matches if m is not None)
+def _get_sort_value(items_list: list, target_items_count: int) -> float:
+    """Rate quality of a match."""
+    if None not in items_list:
+        factor = 1.1 if len(items_list) == target_items_count else 1
+    elif items_list.count(None) == 1:
+        factor = 0.9
+    else:
+        factor = 0.8
+    return factor * sum(1 for n in items_list if n is not None)
 
 
 def _none_in_res_in_front(li: list) -> bool:
@@ -241,6 +236,7 @@ if __name__ == "__main__":
     db = [
         "HMS QUEEN ELIZABETH",
         "hurtz berlin mitte",
+        "hur gggggg cccccc",
         "münchen mite",
         "berlin neukölln",
         "berlin",
@@ -259,8 +255,8 @@ if __name__ == "__main__":
         "xyz",
     ]
 
-    # search_term = "berlin mitte"
-    search_term = input("search term: ")
+    # search_term = input("search term: ")
+    search_term = "hu berli mitt"
     results = get_similar(db, search_term)
     print(f"\nsearch_term: {search_term} ")
     for r in results:
