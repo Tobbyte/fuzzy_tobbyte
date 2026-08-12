@@ -101,9 +101,9 @@ def get_similar(
         - tbd: split on special chars like "-"?
 
     """
-    search_term_split = dissect_string(search_term)[search_term]
+    search_term_split: list[str] = dissect_string(search_term)[search_term]
     matches = {}
-    already_matched_st = []
+    already_matched_st: list[str] = []
     already_matched_ip = []
 
     for item in db:
