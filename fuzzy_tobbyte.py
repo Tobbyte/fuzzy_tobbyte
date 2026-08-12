@@ -76,6 +76,7 @@ def get_similar(
     Does not consider capitalization.
     Looks for direct matches and fuzzy matches of any part of the search
     term in any part of the db items.
+    Returns full, direct matches directly and stops searching further.
     The fuzzy search only considers parts of the db items in the length
     of the length of the original search term parts to better match
     small typos.
@@ -99,6 +100,7 @@ def get_similar(
             len(word) == FUZZY_DIST_DEFAULT (+ x ?). So that no longer
             "ab" matches "cd". require first char the same? tbd.
         - tbd: split on special chars like "-"?
+        - return first full match or always fuzzy by param
 
     """
     search_term_split: list[str] = dissect_string(search_term)[search_term]
@@ -137,6 +139,11 @@ def get_similar(
                             ),
                         )
                         already_matched_ip.append(item_part)
+
+        if set(search_term_split) <= set(already_matched_st):
+            # all search term parts matched directly db item.
+            # no need to look further (except flag thats tbd.)
+            return [item]
 
         # fill with Nones for item_parts not matched direct or fuzzy.
         # Used for sorting order of results.
