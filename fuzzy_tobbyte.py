@@ -231,9 +231,9 @@ def _none_in_res_in_front(li: list) -> bool:
         none_i = li.index(None)
         for i in range(len(li)):
             item = li[i]
-            if item is not None and i < none_i:  # noqa: SIM103
+            if item is not None and i < none_i:
                 return False
-            return True
+        return True
     return False
 
 
