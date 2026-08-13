@@ -9,8 +9,6 @@ Version: 2.1.3
  ~ Made with ❤️ and without ai or code completion (except intelliSense) ~
 """
 
-__all__ = ["get_similar"]  # public method
-
 FUZZY_DIST_DEFAULT = 2
 MIN_MATCH_LEN = 2
 MID_MATCH_LEN = 5
